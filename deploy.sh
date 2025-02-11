@@ -2,8 +2,13 @@
 set -euxo pipefail
 cd "$(dirname "$0")"
 
-./zip.sh my_deployment_package.zip
+PACKAGE_NAME="my_deployment_package.zip"
+FUNCTION_NAME="flowbackToMisskeyUser"
 
-aws lambda update-function-code --function-name flowbackToMisskeyUser --zip-file fileb://my_deployment_package.zip
+trap 'echo "An error occurred. Exiting..."; exit 1;' ERR
 
-rm -f my_deployment_package.zip
+./zip.sh "$PACKAGE_NAME"
+
+aws lambda update-function-code --function-name "$FUNCTION_NAME" --zip-file "fileb://$PACKAGE_NAME"
+
+rm -f "$PACKAGE_NAME"
