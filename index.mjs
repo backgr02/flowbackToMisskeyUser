@@ -36,28 +36,9 @@ const misskeyAccounts = [
   misskeyAccount(false, process.env.MISSKEY_SYSTEMS_HOST, process.env.MISSKEY_SYSTEMS_TOKEN),
 ];
 
-// ユーザー検索関数
-const searchUser = async (event, body, account, search) => {
-  if (body.type === "followed") {
-    if (`https://${event.headers["x-misskey-host"]}` === account.apiClient.origin) {
-      return body.body.user;
-    } else {
-      return await search(body.body.user);
-    }
-  } else if (body.type === "renote") {
-    if (`https://${event.headers["x-misskey-host"]}` === account.apiClient.origin) {
-      return body.body.note.user;
-    } else {
-      return await search(body.body.note.user);
-    }
-  }
-  throw new Error(`Unknown type: ${body.type}`);
-};
-
-// フォロー作成関数
-async function createFollowing(event, body, account) {
-  const user = await searchUser(event, body, account, async (user) => {
-    console.log("search start: " + JSON.stringify(user));
+const search = async (user, account) => {
+  console.log("search start: " + JSON.stringify(user));
+  try {
     const users = await account.apiClient.request("users/search-by-username-and-host", {
       username: user.username,
       host: user.host,
@@ -66,7 +47,23 @@ async function createFollowing(event, body, account) {
     });
     console.log("search end: " + JSON.stringify(users));
     return users[0];
-  });
+  } catch (error) {
+    console.error("Error during search: " + JSON.stringify(error));
+    throw error;
+  }
+};
+
+// ユーザー検索関数
+const searchUser = async (event, body, account) => {
+  const isSameHost = `https://${event.headers["x-misskey-host"]}` === account.apiClient.origin;
+  const user = body.type === "followed" ? body.body.user : body.body.note.user;
+  if (isSameHost) return user;
+  else return await search(user, account);
+};
+
+// フォロー作成関数
+async function createFollowing(event, body, account) {
+  const user = await searchUser(event, body, account);
   console.log("user: " + JSON.stringify(user));
   await account.apiClient.request("following/create", { userId: user.id });
 }
@@ -89,7 +86,7 @@ async function createReactions(_event, body, account) {
         });
         console.log(`Reaction '${reaction}' created for keyword '${keyword}': ${JSON.stringify(create)}`);
       } catch (error) {
-        console.error(`Failed to create reaction '${reaction}' for keyword '${keyword}': ${error}`);
+        console.error(`Failed to create reaction '${reaction}' for keyword '${keyword}': ${JSON.stringify(error)}`);
       }
       break;
     }
@@ -114,9 +111,8 @@ export const handler = async (event, _context) => {
             } else if (body.type === "mention") {
               await createReactions(event, body, account);
             }
-          } catch (e) {
-            console.log("error: " + account.apiClient.origin);
-            console.log(e);
+          } catch (error) {
+            console.log(`error '${account.apiClient.origin}': ${JSON.stringify(error)}`);
           }
         }
       }
@@ -124,7 +120,7 @@ export const handler = async (event, _context) => {
       response = { message: "no body" };
     }
 
-    console.log(JSON.stringify(response));
+    console.log("response: " + JSON.stringify(response));
     return {
       statusCode: 200,
       body: JSON.stringify(response, null, 2),
