@@ -1,5 +1,24 @@
 import * as Misskey from "misskey-js";
 
+// 環境変数の検証
+const requiredEnvVars = [
+  "MISSKEY_IO_HOST",
+  "MISSKEY_IO_TOKEN",
+  "NIJIMISS_MOE_HOST",
+  "NIJIMISS_MOE_TOKEN",
+  "NINEVERSE_COM_HOST",
+  "NINEVERSE_COM_TOKEN",
+  "MISSKEY_SYSTEMS_HOST",
+  "MISSKEY_SYSTEMS_TOKEN",
+];
+
+requiredEnvVars.forEach((envVar) => {
+  if (!process.env[envVar]) {
+    throw new Error(`Environment variable ${envVar} is required`);
+  }
+});
+
+// Misskeyアカウントの作成
 const misskeyAccount = (main, host, token) => {
   console.log("misskeyAccount host=" + host);
   return {
@@ -17,6 +36,7 @@ const misskeyAccounts = [
   misskeyAccount(false, process.env.MISSKEY_SYSTEMS_HOST, process.env.MISSKEY_SYSTEMS_TOKEN),
 ];
 
+// ユーザー検索関数
 const searchUser = async (event, body, account, search) => {
   if (body.type === "followed") {
     if (`https://${event.headers["x-misskey-host"]}` === account.apiClient.origin) {
@@ -34,6 +54,7 @@ const searchUser = async (event, body, account, search) => {
   throw new Error(`Unknown type: ${body.type}`);
 };
 
+// フォロー作成関数
 async function createFollowing(event, body, account) {
   const user = await searchUser(event, body, account, async (user) => {
     console.log("search start: " + JSON.stringify(user));
@@ -50,25 +71,32 @@ async function createFollowing(event, body, account) {
   await account.apiClient.request("following/create", { userId: user.id });
 }
 
+// リアクション作成関数
+const reactionsMap = {
+  ":ohayoo:": ":ohayoo:",
+  ありがとうございます: ":kotira_koso:",
+};
+
 async function createReactions(_event, body, account) {
   console.log("createReactions: note=" + JSON.stringify(body.body.note));
   const text = body.body.note.text;
-  console.log("createReactions: indexOf=" + text.indexOf(":ohayoo:") + " text=" + body.body.note.text);
-  if (text.indexOf(":ohayoo:") != -1) {
-    const create = await account.apiClient.request("notes/reactions/create", {
-      noteId: body.body.note.id,
-      reaction: ":ohayoo:",
-    });
-    console.log("create end: " + JSON.stringify(create));
-  } else if (text.indexOf("ありがとうございます") != -1) {
-    const create = await account.apiClient.request("notes/reactions/create", {
-      noteId: body.body.note.id,
-      reaction: ":kotira_koso:",
-    });
-    console.log("create end: " + JSON.stringify(create));
+  for (const [keyword, reaction] of Object.entries(reactionsMap)) {
+    if (text.includes(keyword)) {
+      try {
+        const create = await account.apiClient.request("notes/reactions/create", {
+          noteId: body.body.note.id,
+          reaction: reaction,
+        });
+        console.log(`Reaction '${reaction}' created for keyword '${keyword}': ${JSON.stringify(create)}`);
+      } catch (error) {
+        console.error(`Failed to create reaction '${reaction}' for keyword '${keyword}': ${error}`);
+      }
+      break;
+    }
   }
 }
 
+// イベントハンドラー
 export const handler = async (event, _context) => {
   try {
     console.log(JSON.stringify(event));
